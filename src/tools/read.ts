@@ -25,6 +25,7 @@ export function registerReadTools(server: McpServer, { client }: ToolContext) {
       inputSchema: {
         query: z
           .string()
+          .trim()
           .default("")
           .describe("Free text, e.g. 'solar output', 'cusip'. Matches column names too."),
         limit: limitSchema.describe("How many datasets to return (1-50)."),
@@ -45,15 +46,22 @@ export function registerReadTools(server: McpServer, { client }: ToolContext) {
       annotations: READ_ONLY,
     },
     async ({ query, limit }) => {
+      const term = query.replace(/\s+/g, " ").trim();
+      const shown = term.replaceAll('"', "'");
       try {
-        const { datasets, total } = await client.searchDatasets(query, limit);
-        const header = query
-          ? `${datasets.length} dataset${datasets.length === 1 ? "" : "s"} matching "${query}" (of ${total}).`
-          : `Newest ${datasets.length} of ${total} datasets on Realia.`;
+        const { datasets, total } = await client.searchDatasets(term, limit);
+        const summary =
+          datasets.length === 0
+            ? term
+              ? `No dataset matched "${shown}".`
+              : "No datasets on Realia."
+            : term
+              ? `${datasets.length} dataset${datasets.length === 1 ? "" : "s"} matching "${shown}" (of ${total}).`
+              : `Newest ${datasets.length} of ${total} datasets on Realia.`;
         return textResult(
           datasets.length === 0
-            ? `No dataset matched "${query}".`
-            : `${header}\n\n${datasets.map((dataset) => datasetLine(dataset)).join("\n\n")}`,
+            ? summary
+            : `${summary}\n\n${datasets.map((dataset) => datasetLine(dataset)).join("\n\n")}`,
           {
             datasets: datasets.map((dataset) => ({
               id: dataset.id,
@@ -81,7 +89,7 @@ export function registerReadTools(server: McpServer, { client }: ToolContext) {
         "coin launched on it if there is one. The file itself is not public — this returns the schema " +
         "and sample only.",
       inputSchema: {
-        dataset_id: z.string().min(1).describe("Dataset id from search_datasets."),
+        dataset_id: z.string().trim().min(1).describe("Dataset id from search_datasets."),
       },
       outputSchema: {
         found: z.boolean(),
@@ -118,7 +126,11 @@ export function registerReadTools(server: McpServer, { client }: ToolContext) {
         "List the coins launched on Realia datasets, newest first, with mint address, pump.fun link, " +
         "status, and the dataset each one is backed by.",
       inputSchema: {
-        query: z.string().default("").describe("Optional filter on coin name or symbol."),
+        query: z
+          .string()
+          .trim()
+          .default("")
+          .describe("Optional filter on coin name or symbol."),
         limit: limitSchema.describe("How many coins to return (1-50)."),
       },
       outputSchema: {
@@ -142,15 +154,20 @@ export function registerReadTools(server: McpServer, { client }: ToolContext) {
       annotations: READ_ONLY,
     },
     async ({ query, limit }) => {
+      const term = query.replace(/\s+/g, " ").trim();
+      const shown = term.replaceAll('"', "'");
       try {
-        const { coins, total, launchpadUrl } = await client.listLaunchpad(query, limit);
-        const header = query
-          ? `${coins.length} coin${coins.length === 1 ? "" : "s"} matching "${query}" (of ${total} live).`
-          : `Newest ${coins.length} of ${total} live coins on Realia.`;
-        return textResult(
+        const { coins, total, launchpadUrl } = await client.listLaunchpad(term, limit);
+        const summary =
           coins.length === 0
-            ? "No coin matched."
-            : `${header}\n\n${coins.map(launchpadLine).join("\n\n")}`,
+            ? term
+              ? `No coin matched "${shown}".`
+              : "No coins on the Realia launchpad."
+            : term
+              ? `${coins.length} coin${coins.length === 1 ? "" : "s"} matching "${shown}" (of ${total} live).`
+              : `Newest ${coins.length} of ${total} live coins on Realia.`;
+        return textResult(
+          coins.length === 0 ? summary : `${summary}\n\n${coins.map(launchpadLine).join("\n\n")}`,
           {
             coins: coins.map((item) => ({
               id: item.id,
@@ -184,6 +201,7 @@ export function registerReadTools(server: McpServer, { client }: ToolContext) {
       inputSchema: {
         id_or_mint: z
           .string()
+          .trim()
           .min(1)
           .describe("A Solana mint address or a Realia coin id."),
       },
@@ -218,7 +236,7 @@ export function registerReadTools(server: McpServer, { client }: ToolContext) {
           "",
           "## Dataset behind it",
           dataset
-            ? datasetLine(dataset, coin)
+            ? datasetLine(dataset)
             : `_Dataset \`${coin.datasetId}\` is no longer readable._`,
         ].join("\n");
         return textResult(text, {

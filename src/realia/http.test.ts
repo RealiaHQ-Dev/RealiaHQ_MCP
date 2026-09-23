@@ -108,6 +108,19 @@ describe("a host with no Realia API", () => {
 });
 
 describe("a reply that is not the Realia API", () => {
+  it("treats an empty 404 as a missing dataset", async () => {
+    const fetchImpl = vi.fn(async () => new Response(null, { status: 404 }));
+    const client = createHttpRealiaClient(config, fetchImpl as unknown as typeof fetch);
+    await expect(client.getDataset("missing")).resolves.toBeNull();
+  });
+
+  it("does not treat an HTML 404 as a missing dataset or coin", async () => {
+    const fetchImpl = vi.fn(async () => new Response("<!doctype html>", { status: 404 }));
+    const client = createHttpRealiaClient(config, fetchImpl as unknown as typeof fetch);
+    await expect(client.getDataset("missing")).rejects.toThrow(/non-JSON/);
+    await expect(client.getCoin("missing")).rejects.toThrow(/REALIA_API_URL/);
+  });
+
   it("rejects a 200 carrying HTML rather than reporting an empty Realia", async () => {
     // A proxy, a login wall, or a wrong host all look like this.
     const fetchImpl = vi.fn(
@@ -120,5 +133,27 @@ describe("a reply that is not the Realia API", () => {
     const client = createHttpRealiaClient(config, fetchImpl as unknown as typeof fetch);
     await expect(client.searchDatasets("", 10)).rejects.toThrow(/non-JSON/);
     await expect(client.searchDatasets("", 10)).rejects.toThrow(/REALIA_API_URL/);
+  });
+
+  it("does not report a null JSON body as an empty catalog", async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse(null));
+    const client = createHttpRealiaClient(config, fetchImpl as unknown as typeof fetch);
+    await expect(client.searchDatasets("", 10)).rejects.toThrow(/not an object/);
+    await expect(client.listLaunchpad("", 10)).rejects.toThrow(/REALIA_API_URL/);
+  });
+
+  it("rejects a JSON object that is not a dataset list", async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ ok: true }));
+    const client = createHttpRealiaClient(config, fetchImpl as unknown as typeof fetch);
+    await expect(client.searchDatasets("", 10)).rejects.toThrow(/unexpected shape/);
+  });
+
+  it("points at the token when Realia returns 401", async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({ error: { code: "unauthorized", message: "Invalid token." } }, 401),
+    );
+    const client = createHttpRealiaClient(config, fetchImpl as unknown as typeof fetch);
+    await expect(client.whoami()).rejects.toThrow(/Invalid token/);
+    await expect(client.whoami()).rejects.toThrow(/REALIA_API_TOKEN/);
   });
 });

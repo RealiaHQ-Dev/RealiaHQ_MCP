@@ -19,4 +19,16 @@ describe("loadConfig", () => {
   it("treats a blank token as absent", () => {
     expect(loadConfig({ REALIA_API_TOKEN: "   " }).apiToken).toBeNull();
   });
+
+  it("rejects a url the client could not call over http", () => {
+    expect(() => loadConfig({ REALIA_API_URL: "file:///tmp/realia" })).toThrow(/http/);
+    expect(() => loadConfig({ REALIA_API_URL: "https://realiahq.xyz?token=1" })).toThrow(/query/);
+    expect(() => loadConfig({ REALIA_API_URL: "https://user:pass@realiahq.xyz" })).toThrow(
+      /credentials/,
+    );
+  });
+
+  it("rejects a token with whitespace inside it", () => {
+    expect(() => loadConfig({ REALIA_API_TOKEN: "abc def" })).toThrow(/whitespace/);
+  });
 });

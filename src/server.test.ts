@@ -113,7 +113,37 @@ describe("realia mcp server", () => {
     const { dataset } = structured(result);
     expect(dataset.title).toBe("Chip prices");
     expect(dataset.fileName).toBe("chips.csv");
+    expect(dataset.mimeType).toBe("text/csv");
     expect(text(result)).toContain("Uploaded.");
+  });
+
+  it("infers application/json from a .json file name", async () => {
+    const client = await connect();
+    const result = (await client.callTool({
+      name: "upload_dataset",
+      arguments: {
+        title: "Chip prices",
+        description: "Weekly prices.",
+        file_name: "chips.json",
+        content: '{"brand":"Lays"}',
+      },
+    })) as CallToolResult;
+    expect(structured(result).dataset.mimeType).toBe("application/json");
+  });
+
+  it("keeps an explicit mime type", async () => {
+    const client = await connect();
+    const result = (await client.callTool({
+      name: "upload_dataset",
+      arguments: {
+        title: "Chip prices",
+        description: "Weekly prices.",
+        file_name: "chips.json",
+        content: '{"brand":"Lays"}',
+        mime_type: "text/plain",
+      },
+    })) as CallToolResult;
+    expect(structured(result).dataset.mimeType).toBe("text/plain");
   });
 
   it("launch_coin returns a link to sign and never claims the coin is live", async () => {
@@ -166,5 +196,72 @@ describe("realia mcp server", () => {
     })) as CallToolResult;
     expect(result.isError).toBe(true);
     expect(text(result)).toContain("dataset you uploaded");
+  });
+
+  it("treats a blank search as the newest datasets", async () => {
+    const client = await connect();
+    const result = (await client.callTool({
+      name: "search_datasets",
+      arguments: { query: "   " },
+    })) as CallToolResult;
+    expect(text(result)).toContain("Newest 2 of 2");
+    expect(structured(result).datasets).toHaveLength(2);
+  });
+
+  it("says the catalog is empty instead of matching a blank query", async () => {
+    const client = await connect({
+      searchDatasets: async () => ({ datasets: [], total: 0 }),
+    });
+    const result = (await client.callTool({
+      name: "search_datasets",
+      arguments: {},
+    })) as CallToolResult;
+    expect(text(result)).toBe("No datasets on Realia.");
+  });
+
+  it("says the launchpad is empty without implying a failed filter", async () => {
+    const client = await connect({
+      listLaunchpad: async () => ({
+        coins: [],
+        total: 0,
+        launchpadUrl: "https://realiahq.xyz/launchpad",
+      }),
+    });
+    const blank = (await client.callTool({
+      name: "list_launchpad",
+      arguments: { query: "   " },
+    })) as CallToolResult;
+    expect(text(blank)).toBe("No coins on the Realia launchpad.");
+
+    const missed = (await client.callTool({
+      name: "list_launchpad",
+      arguments: { query: "nope" },
+    })) as CallToolResult;
+    expect(text(missed)).toBe('No coin matched "nope".');
+  });
+
+  it("rejects an upload that is not a csv, tsv, txt, or json file", async () => {
+    const client = await connect();
+    const result = (await client.callTool({
+      name: "upload_dataset",
+      arguments: {
+        title: "Notes",
+        description: "A pdf.",
+        file_name: "notes.pdf",
+        content: "hello",
+      },
+    })) as CallToolResult;
+    expect(result.isError).toBe(true);
+    expect(text(result)).toMatch(/\.csv/);
+  });
+
+  it("rejects a launch that is not a positive SOL amount", async () => {
+    const client = await connect();
+    const result = (await client.callTool({
+      name: "launch_coin",
+      arguments: { dataset_id: "d", name: "Name", symbol: "N", initial_buy_sol: "lots" },
+    })) as CallToolResult;
+    expect(result.isError).toBe(true);
+    expect(text(result)).toMatch(/SOL/);
   });
 });

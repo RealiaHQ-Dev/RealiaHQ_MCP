@@ -7,15 +7,26 @@ import type { Coin, Dataset, LaunchpadItem } from "./types.js";
  */
 
 export function formatBytes(bytes: number | null) {
-  if (bytes === null || !Number.isFinite(bytes) || bytes <= 0) return "unknown size";
+  if (bytes === null || !Number.isFinite(bytes) || bytes < 0) return "unknown size";
+  if (bytes === 0) return "0 B";
   const units = ["B", "KB", "MB", "GB"];
   const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
   const value = bytes / 1024 ** exponent;
   return `${value >= 10 || exponent === 0 ? Math.round(value) : value.toFixed(1)} ${units[exponent]}`;
 }
 
+/** One markdown table cell: pipes and backticks would otherwise split or escape the row. */
+function tableCell(value: string) {
+  const clean = value.replace(/\s+/g, " ").replace(/\|/g, "\\|").replace(/`/g, "'").trim();
+  return clean || "—";
+}
+
+function oneLine(text: string) {
+  return text.replace(/\s+/g, " ").trim();
+}
+
 function shorten(text: string, max = 160) {
-  const clean = text.replace(/\s+/g, " ").trim();
+  const clean = oneLine(text);
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
 }
 
@@ -23,7 +34,7 @@ export function datasetLine(dataset: Dataset, coin?: Coin | null) {
   const fields = dataset.schema.length;
   const suffix = coin ? ` · coin $${coin.symbol} (${coin.status})` : "";
   return [
-    `- **${dataset.title}** — \`${dataset.id}\``,
+    `- **${oneLine(dataset.title)}** — \`${dataset.id}\``,
     `  ${shorten(dataset.description)}`,
     `  ${fields} field${fields === 1 ? "" : "s"} · ${formatBytes(dataset.byteSize)}${suffix}`,
     `  ${dataset.url}`,
@@ -32,7 +43,7 @@ export function datasetLine(dataset: Dataset, coin?: Coin | null) {
 
 export function datasetDetail(dataset: Dataset, coin: Coin | null) {
   const lines = [
-    `# ${dataset.title}`,
+    `# ${oneLine(dataset.title)}`,
     "",
     dataset.description,
     "",
@@ -49,7 +60,9 @@ export function datasetDetail(dataset: Dataset, coin: Coin | null) {
   } else {
     lines.push("| field | type | description |", "| --- | --- | --- |");
     for (const field of dataset.schema) {
-      lines.push(`| \`${field.name}\` | ${field.type} | ${field.description || "—"} |`);
+      lines.push(
+        `| \`${tableCell(field.name)}\` | ${tableCell(field.type)} | ${tableCell(field.description)} |`,
+      );
     }
   }
 
@@ -70,9 +83,9 @@ export function datasetDetail(dataset: Dataset, coin: Coin | null) {
 
 export function launchpadLine(item: LaunchpadItem) {
   const mint = item.mintAddress ? ` · mint \`${item.mintAddress}\`` : "";
-  const on = item.datasetTitle ? ` on "${item.datasetTitle}"` : "";
+  const on = item.datasetTitle ? ` on "${oneLine(item.datasetTitle).replaceAll('"', "'")}"` : "";
   return [
-    `- **$${item.symbol}** ${item.name}${on} — ${item.status}${mint}`,
+    `- **$${oneLine(item.symbol)}** ${oneLine(item.name)}${on} — ${item.status}${mint}`,
     `  launched ${item.createdAt} · initial buy ${item.initialBuySol} SOL`,
     `  ${item.pumpFunUrl ?? "not on pump.fun yet"}`,
   ].join("\n");

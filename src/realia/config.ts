@@ -23,10 +23,30 @@ function trimTrailingSlash(url: string) {
  */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): RealiaConfig {
   const apiUrl = trimTrailingSlash(env.REALIA_API_URL?.trim() || DEFAULT_API_URL);
+  let url: URL;
   try {
-    new URL(apiUrl);
+    url = new URL(apiUrl);
   } catch {
     throw new ConfigError(`REALIA_API_URL is not a valid URL: ${apiUrl}`);
   }
-  return { apiUrl, apiToken: env.REALIA_API_TOKEN?.trim() || null };
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new ConfigError(`REALIA_API_URL must be an http(s) URL: ${apiUrl}`);
+  }
+  if (!url.hostname) {
+    throw new ConfigError(`REALIA_API_URL is not a valid URL: ${apiUrl}`);
+  }
+  if (url.username || url.password) {
+    throw new ConfigError(
+      "REALIA_API_URL must not include credentials. Set REALIA_API_TOKEN instead.",
+    );
+  }
+  if (url.search || url.hash) {
+    throw new ConfigError(`REALIA_API_URL must not include a query or hash: ${apiUrl}`);
+  }
+
+  const apiToken = env.REALIA_API_TOKEN?.trim() || null;
+  if (apiToken && /\s/.test(apiToken)) {
+    throw new ConfigError("REALIA_API_TOKEN cannot contain whitespace.");
+  }
+  return { apiUrl, apiToken };
 }

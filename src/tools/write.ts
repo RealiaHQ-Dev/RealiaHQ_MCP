@@ -9,6 +9,13 @@ import {
   textResult,
   type ToolContext,
 } from "./shared.js";
+import {
+  datasetFileNameError,
+  mimeTypeForFileName,
+  solAmountError,
+  tickerError,
+  uploadContentError,
+} from "./validate.js";
 
 export function registerWriteTools(server: McpServer, { client }: ToolContext) {
   server.registerTool(
@@ -47,9 +54,9 @@ export function registerWriteTools(server: McpServer, { client }: ToolContext) {
     {
       title: "Upload a dataset to Realia",
       description:
-        "Publish a CSV, TSV, or JSON dataset to Realia under the account this token belongs to. " +
+        "Publish a CSV, TSV, TXT, or JSON dataset to Realia under the account this token belongs to. " +
         "Pass the file's text directly as `content`. Realia infers the schema and a sample row, and " +
-        "the dataset becomes publicly searchable. Up to 8 MB.",
+        "the dataset becomes publicly searchable. Up to 8 MB. mime_type is inferred from the file name when omitted.",
       inputSchema: {
         title: z.string().trim().min(1).max(120).describe("Human title, e.g. 'Rooftop solar output'."),
         description: z
@@ -63,13 +70,25 @@ export function registerWriteTools(server: McpServer, { client }: ToolContext) {
           .trim()
           .min(1)
           .max(120)
+          .superRefine((name, ctx) => {
+            const message = datasetFileNameError(name);
+            if (message) ctx.addIssue(message);
+          })
           .describe("File name ending in .csv, .tsv, .txt, or .json."),
-        content: z.string().min(1).describe("The full file contents as text."),
+        content: z
+          .string()
+          .min(1)
+          .superRefine((content, ctx) => {
+            const message = uploadContentError(content);
+            if (message) ctx.addIssue(message);
+          })
+          .describe("The full file contents as text, up to 8 MB."),
         mime_type: z
           .string()
           .trim()
-          .default("text/csv")
-          .describe("Content type, e.g. text/csv or application/json."),
+          .min(1)
+          .optional()
+          .describe("Content type. Inferred from the file name when omitted."),
       },
       outputSchema: {
         dataset: z.object(datasetShape),
@@ -82,7 +101,7 @@ export function registerWriteTools(server: McpServer, { client }: ToolContext) {
           title,
           description,
           fileName: file_name,
-          mimeType: mime_type,
+          mimeType: mime_type ?? mimeTypeForFileName(file_name),
           content,
         });
         return textResult(
@@ -104,12 +123,26 @@ export function registerWriteTools(server: McpServer, { client }: ToolContext) {
         "to sign with their wallet. This tool cannot spend anything on its own: no transaction is built " +
         "or signed here, and the link expires. Give the user the returned confirmUrl.",
       inputSchema: {
-        dataset_id: z.string().min(1).describe("A dataset uploaded by this account."),
+        dataset_id: z.string().trim().min(1).describe("A dataset uploaded by this account."),
         name: z.string().trim().min(1).max(32).describe("Coin name, up to 32 characters."),
-        symbol: z.string().trim().min(1).max(10).describe("Ticker, up to 10 characters."),
+        symbol: z
+          .string()
+          .trim()
+          .min(1)
+          .max(10)
+          .superRefine((symbol, ctx) => {
+            const message = tickerError(symbol);
+            if (message) ctx.addIssue(message);
+          })
+          .describe("Ticker of letters and digits, up to 10 characters."),
         description: z.string().trim().max(500).default("").describe("Shown on pump.fun."),
         initial_buy_sol: z
           .string()
+          .trim()
+          .superRefine((value, ctx) => {
+            const message = solAmountError(value);
+            if (message) ctx.addIssue(message);
+          })
           .default("0.1")
           .describe("SOL the creator buys at launch, e.g. '0.1'."),
         image_url: z.string().url().optional().describe("Optional coin image URL."),
